@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ARCEUS</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#070c14; overflow:hidden; font-family:'Courier New',monospace; color:#5a8aaa; }
+canvas { display:block; }
+.p  { position:fixed; pointer-events:none; font-size:10px; line-height:1.95; letter-spacing:.07em; }
+#tl { top:14px; left:14px; }
+#tr { top:14px; right:14px; text-align:right; }
+#br { bottom:12px; right:14px; text-align:right; color:#142030; }
+.t  { font-size:13px; font-weight:bold; letter-spacing:.22em; color:#50b8e0; }
+.s  { font-size:9px; letter-spacing:.18em; color:#142030; margin-bottom:8px; }
+.lo { color:#1e3c50; }
+.v  { color:#50b8e0; }
+.ok { color:#40a860; }
+.wn { color:#b88840; }
+</style>
+</head>
+<body>
+<div class="p" id="tl">
+  <div class="t">ARCEUS</div>
+  <div class="s">BIPED_ROBOT</div>
+  <span class="lo">platform  </span><span class="v">RPi4B 8GB</span><br>
+  <span class="lo">servos    </span><span class="v">MG996R × 20</span><br>
+  <span class="lo">stance    </span><span class="v" id="st">---</span><br>
+  <br>
+  <span class="ok">✓ Knee/Ankle — 9.4 kg·cm</span><br>
+  <span class="wn">⚠ Hip_pitch  — use 6V</span><br>
+</div>
+<div class="p" id="tr">
+  <span class="lo">JOINT ANGLES</span><br>
+  <span class="lo">HipPitch_L   </span><span class="v" id="jlhp">0.0°</span><br>
+  <span class="lo">HipRoll_L    </span><span class="v" id="jlhr">0.0°</span><br>
+  <span class="lo">Knee_L       </span><span class="v" id="jlkn">0.0°</span><br>
+  <span class="lo">AnkPitch_L   </span><span class="v" id="jlap">0.0°</span><br>
+  <span class="lo">AnkRoll_L    </span><span class="v" id="jlar">0.0°</span><br>
+  <span class="lo">HipPitch_R   </span><span class="v" id="jrhp">0.0°</span><br>
+  <span class="lo">Knee_R       </span><span class="v" id="jrkn">0.0°</span><br>
+  <span class="lo">AnkRoll_R    </span><span class="v" id="jrar">0.0°</span><br>
+  <span class="lo">Spine_X      </span><span class="v" id="jspn">0.0°</span><br>
+  <span class="lo">Pelvis Y     </span><span class="v" id="jpy">0 mm</span><br>
+</div>
+<div class="p" id="br">drag·orbit &nbsp; scroll·zoom &nbsp; space·pause &nbsp; r·reset</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════════════════════
+//  COORDINATE MAPPING   URDF → Three.js
+//
+//  URDF frame:  x = forward,  y = left,   z = up
+//  Three.js:    x = right,    y = up,     z = toward viewer
+//
+//  Mapping (one-to-one substitution):
+//    URDF x  →  Three.js  z       (forward → depth)
+//    URDF y  →  Three.js  x       (left    → lateral)
+//    URDF z  →  Three.js  y       (up      → height)
+//
+//  Joint position  xyz="ux uy uz"  →  group.position.set(uy·S, uz·S, ux·S)
+//  Box size        "ux uy uz"      →  BoxGeometry(uy·S, uz·S, ux·S)
+//
+//  Rotation axes:
+//    URDF axis "0 1 0"  (URDF y=lateral) →  Three.js rotation.x
+//    URDF axis "1 0 0"  (URDF x=fwd)     →  Three.js rotation.z
+//    URDF axis "0 0 1"  (URDF z=up)      →  Three.js rotation.y
+// ═══════════════════════════════════════════════════════════════════════
+
+const S = 4.6;   // world-units per metre
+
+// ── Renderer ──────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+renderer.outputEncoding    = THREE.sRGBEncoding;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x070c14);
+scene.fog = new THREE.Fog(0x070c14, 28, 55);
+
+const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.01, 80);
+
+// ── Lights ────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0xa0bcd0, 0.50));
+
+const sun = new THREE.DirectionalLight(0xffffff, 1.9);
+sun.position.set(4, 11, 5);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = sun.shadow.camera.bottom = -7;
+sun.shadow.camera.right = sun.shadow.camera.top  =  7;
+sun.shadow.camera.near  = 1;
+sun.shadow.camera.far   = 30;
+sun.shadow.bias = -0.0005;
+scene.add(sun);
+
+const back = new THREE.DirectionalLight(0x6090c0, 0.50);
+back.position.set(-4, 3, -5);
+scene.add(back);
+
+const warm = new THREE.DirectionalLight(0xffa060, 0.28);
+warm.position.set(5, 1, 3);
+scene.add(warm);
+
+// ── FLAT METAL FLOOR ─────────────────────────────────────────────────
+// y = 0 is the ground contact surface — nothing ever goes below this.
+const floorMat = new THREE.MeshStandardMaterial({
+  color: 0x101c28, metalness: 0.94, roughness: 0.07
+});
+const floorMesh = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), floorMat);
+floorMesh.rotation.x = -Math.PI / 2;
+floorMesh.position.y = 0;
+floorMesh.receiveShadow = true;
+scene.add(floorMesh);
+
+// Fine panel grid sitting 1mm above floor
+const grid = new THREE.GridHelper(80, 160, 0x0c1c2c, 0x080e18);
+grid.position.y = 0.001;
+scene.add(grid);
+
+// Bright metallic runway strip under robot
+const runMat = new THREE.MeshStandardMaterial({ color: 0x1a2e42, metalness: 0.97, roughness: 0.04 });
+const run = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 80), runMat);
+run.rotation.x = -Math.PI / 2;
+run.position.y = 0.002;
+run.receiveShadow = true;
+scene.add(run);
+
+// ── Helpers ───────────────────────────────────────────────────────────
+// Build a URDF box: size="ux uy uz" → BoxGeometry(uy·S, uz·S, ux·S)
+function ubox(ux, uy, uz, mat) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(uy*S, uz*S, ux*S), mat);
+  m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+// Child group at URDF joint origin xyz="ux uy uz"
+function ujoint(parent, ux, uy, uz) {
+  const g = new THREE.Group();
+  g.position.set(uy*S, uz*S, ux*S);
+  parent.add(g);
+  return g;
+}
+
+// ── Materials  (exact URDF rgba) ─────────────────────────────────────
+function mk(hex, r=0.52, m=0.32) {
+  return new THREE.MeshStandardMaterial({ color: hex, roughness: r, metalness: m });
+}
+const M = {
+  pelvis: mk(0x8c8ca6),          // rgba(0.55,0.55,0.65)
+  torso:  mk(0x80809e),          // rgba(0.50,0.50,0.62)
+  neck:   mk(0xcccccc),          // rgba(0.80,0.80,0.80)
+  head:   mk(0xebebeb, 0.38, 0.14),
+  armL:   mk(0x6666b8),          // rgba(0.40,0.40,0.72)
+  armR:   mk(0xb86666),          // rgba(0.72,0.40,0.40)
+  legL:   mk(0x59a659),          // rgba(0.35,0.65,0.35)
+  legR:   mk(0xa65959),          // rgba(0.65,0.35,0.35)
+  foot:   mk(0x2e2e2e, 0.28, 0.70),
+  grip:   mk(0x404040, 0.32, 0.60),
+};
+const eyeMat = new THREE.MeshBasicMaterial({ color: 0x33ccff });
+
+// ═══════════════════════════════════════════════════════════════════════
+//  STANDING HEIGHT  —  foot bottom at exactly y = 0
+//
+//  Sagittal-plane FK: sum of z-drops (URDF) converted to world y-drop:
+//    pelvis → hip_yaw:    z = -0.04 m  (rigid)
+//    hip_yaw → hip_pitch: z = -0.07 m  (rigid, hip_roll at same position)
+//    hip_pitch → knee:    z = -0.14 m  rotated by hp  → -0.14·cos(hp)
+//    knee → ankle_pitch:  z = -0.07 m  rotated by hp+kn → -0.07·cos(hp+kn)
+//    ankle_pitch → ankle_roll: z = -0.02 m  rotated by hp+kn+ap → -0.02·cos(hp+kn+ap)
+//    ankle_roll → foot bottom: foot half-height = 0.02 m  (constant)
+//
+//    total_drop = 0.11 + 0.14·cos(hp) + 0.07·cos(hp+kn) + 0.02·cos(hp+kn+ap) + 0.02
+//               = 0.13 + 0.14·cos(hp) + 0.07·cos(hp+kn) + 0.02·cos(hp+kn+ap)
+//
+//    pelvis_y_required = total_drop · S
+// ═══════════════════════════════════════════════════════════════════════
+function requiredPelvisY(hp, kn, ap) {
+  return ( 0.13
+         + 0.14 * Math.cos(hp)
+         + 0.07 * Math.cos(hp + kn)
+         + 0.02 * Math.cos(hp + kn + ap)
+         ) * S;
+}
+// Nominal standing height (all joints at rest = 0, KNEE_BASE=0.10, ANK_BIAS=0.04)
+const NOMINAL_Y = requiredPelvisY(0, 0, 0);   // = 0.36 · S
+
+// ── Robot root ────────────────────────────────────────────────────────
+const robot = new THREE.Group();
+scene.add(robot);
+
+// base_link (pelvis)  size="0.1 0.16 0.08"
+const pelvisGrp = new THREE.Group();
+pelvisGrp.position.y = NOMINAL_Y;
+robot.add(pelvisGrp);
+pelvisGrp.add(ubox(0.10, 0.16, 0.08, M.pelvis));
+
+// Spinal_X   xyz="0 0 0.12"   axis="0 0 1" → rotation.y
+const spineGrp = ujoint(pelvisGrp, 0, 0, 0.12);
+spineGrp.add(ubox(0.10, 0.16, 0.16, M.torso));   // upper_torso
+
+// Neck_Y   xyz="0 0 0.10"
+const neckGrp = ujoint(spineGrp, 0, 0, 0.10);
+neckGrp.add(ubox(0.04, 0.04, 0.04, M.neck));
+
+// Neck_X   xyz="0 0 0.055"
+const headGrp = ujoint(neckGrp, 0, 0, 0.055);
+headGrp.add(ubox(0.07, 0.07, 0.07, M.head));
+
+// Eyes on +z face (URDF +x = forward → Three.js +z)
+[-1, 1].forEach(s => {
+  const e = new THREE.Mesh(new THREE.PlaneGeometry(0.013*S, 0.006*S), eyeMat);
+  e.position.set(s * 0.016*S, 0.008*S, 0.0355*S);
+  headGrp.add(e);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+//  ARMS  —  exact URDF chain
+//
+//  URDF rest-pose: arm chain extends in URDF +y (lateral).
+//  In Three.js this is the +x direction for left arm.
+//
+//  To make the arm HANG DOWN from the bichep joint outward:
+//    At bichep group (URDF axis "1 0 0" → rotation.z):
+//    Left  (sx=+1): rotation.z = -π/2  →  local +x maps to world -y  (down) ✓
+//    Right (sx=-1): rotation.z = +π/2  →  local -x maps to world -y  (down) ✓
+//
+//  chest_arm & shoulder remain horizontal (URDF-faithful connector).
+//  The VISIBLE hanging arm (bichep + elbow + gripper) is at x = 0.20·S
+//  from the spine center, well outside the torso (torso half-width = 0.08·S).
+//  → NO arm-body intersection on the hanging portion.
+// ═══════════════════════════════════════════════════════════════════════
+function buildArm(side) {
+  const sx  = side;       // +1 = left, -1 = right
+  const mat = sx > 0 ? M.armL : M.armR;
+
+  // Chest_arm_left/right   xyz="0 ±0.07 0.048"   axis="0 1 0" → rotation.x
+  const chestArm = ujoint(spineGrp, 0, sx * 0.07, 0.048);
+  chestArm.add(ubox(0.04, 0.03, 0.03, mat));   // chest_arm_link
+
+  // Shoulder_left/right   xyz="0 ±0.03 0"   axis="0 0 1" → rotation.y
+  const shoulder = ujoint(chestArm, 0, sx * 0.03, 0);
+  shoulder.add(ubox(0.04, 0.05, 0.04, mat));   // shoulder_link  (half size)
+
+  // Bichep_left/right   axis="1 0 0" → rotation.z
+  // Gap from shoulder-end to bichep-edge = elbow thickness (0.03·S)
+  const bichep = ujoint(shoulder, 0, sx * 0.0475, 0);
+  bichep.rotation.z = -sx * Math.PI / 2;       // ← hang arm down
+  // Offset mesh so bichep TOP = shoulder TOP.
+  // Without offset: top is at joint+0.05·S (half of 0.10·S).
+  // Shoulder top is at joint+0.02·S (half of 0.04·S).
+  // Shift mesh by sx*0.03·S in bichep local-x → world -0.03·S in y → top lands at +0.02·S ✓
+  const bichepMesh = ubox(0.03, 0.10, 0.03, mat);
+  bichepMesh.position.x = sx * 0.03 * S;
+  bichep.add(bichepMesh);
+
+  // Elbow — placed below bichep with a small visible joint gap.
+  // Bichep bottom = joint − 0.08·S.  Gap = 0.02·S.  Elbow half = 0.045·S.
+  // → elbow centre = 0.08 + 0.02 + 0.045 = 0.145·S below bichep joint.
+  const elbow = new THREE.Group();
+  elbow.position.x = sx * 0.135 * S;
+  bichep.add(elbow);
+  elbow.add(ubox(0.03, 0.09, 0.03, mat));     // elbow_link
+
+  // Gripper — flush below elbow bottom (no gap, tight joint).
+  // Elbow bottom = 0.145+0.045 = 0.190·S.  Gripper half = 0.025·S.
+  // → gripper centre = 0.190+0.025 = 0.215·S → offset from elbow = 0.07·S.
+  const gripper = new THREE.Group();
+  gripper.position.x = sx * 0.07 * S;
+  elbow.add(gripper);
+  gripper.add(ubox(0.03, 0.05, 0.02, M.grip));  // gripper_link
+
+  return { chestArm, shoulder, bichep, elbow, gripper };
+}
+const lArm = buildArm(+1);
+const rArm = buildArm(-1);
+
+// ═══════════════════════════════════════════════════════════════════════
+//  LEGS  —  exact URDF chain, every link centred at its joint origin
+// ═══════════════════════════════════════════════════════════════════════
+function buildLeg(side) {
+  const sx  = side;
+  const mat = sx > 0 ? M.legL : M.legR;
+
+  // Hip_yaw   xyz="0 ±0.06 -0.04"   axis="0 0 1" → rotation.y
+  const hipYaw = ujoint(pelvisGrp, 0, sx * 0.06, -0.04);
+  hipYaw.add(ubox(0.04, 0.04, 0.04, mat));
+
+  // Hip_roll  xyz="0 0 0"   axis="1 0 0" → rotation.z
+  const hipRoll = ujoint(hipYaw, 0, 0, 0);
+  hipRoll.add(ubox(0.04, 0.04, 0.04, mat));
+
+  // Hip_pitch  xyz="0 0 -0.07"   axis="0 1 0" → rotation.x
+  // thigh_link size="0.04 0.04 0.14" CENTRED here
+  const hipPitch = ujoint(hipRoll, 0, 0, -0.07);
+  hipPitch.add(ubox(0.04, 0.04, 0.14, mat));
+
+  // Knee  xyz="0 0 -0.14"   axis="0 1 0" → rotation.x
+  // shin_link size="0.03 0.03 0.14" CENTRED here
+  const knee = ujoint(hipPitch, 0, 0, -0.14);
+  knee.add(ubox(0.03, 0.03, 0.14, mat));
+
+  // Ankle_pitch  xyz="0 0 -0.07"   axis="0 1 0" → rotation.x
+  // ankle_link size="0.04 0.04 0.04" CENTRED here
+  const anklePitch = ujoint(knee, 0, 0, -0.07);
+  anklePitch.add(ubox(0.04, 0.04, 0.04, mat));
+
+  // Ankle_roll  xyz="0 0 -0.02"   axis="1 0 0" → rotation.z
+  // foot_link size="0.11 0.07 0.04" CENTRED here
+  // foot bottom = ankle_roll_y − 0.02·S  (half of foot height 0.04)
+  const ankleRoll = ujoint(anklePitch, 0, 0, -0.02);
+  ankleRoll.add(ubox(0.11, 0.07, 0.04, M.foot));
+
+  return { hipYaw, hipRoll, hipPitch, knee, anklePitch, ankleRoll };
+}
+const lLeg = buildLeg(+1);
+const rLeg = buildLeg(-1);
+
+// ── Camera ────────────────────────────────────────────────────────────
+// Start at a nice side-front view with floor clearly visible and flat
+let theta = 0.55;   // horizontal angle (rad)
+let phi   = 0.20;   // elevation (rad) — shallow so floor looks flat
+let dist  = 6.8;
+const LOOK_Y = NOMINAL_Y * 0.78;
+
+function setCam() {
+  camera.position.set(
+    dist * Math.sin(theta) * Math.cos(phi),
+    LOOK_Y + dist * Math.sin(phi),
+    dist * Math.cos(theta) * Math.cos(phi)
+  );
+  camera.lookAt(0, LOOK_Y, 0);
+}
+
+let drag=false, lx=0, ly=0;
+renderer.domElement.addEventListener('mousedown', e=>{drag=true;lx=e.clientX;ly=e.clientY;});
+window.addEventListener('mouseup', ()=>drag=false);
+window.addEventListener('mousemove', e=>{
+  if(!drag)return;
+  theta-=(e.clientX-lx)*0.007;
+  phi=Math.max(0.03,Math.min(1.2,phi+(e.clientY-ly)*0.005));
+  lx=e.clientX;ly=e.clientY;
+});
+renderer.domElement.addEventListener('wheel',e=>{
+  dist=Math.max(2.5,Math.min(18,dist+e.deltaY*0.007));
+},{passive:true});
+renderer.domElement.addEventListener('touchstart',e=>{drag=true;lx=e.touches[0].clientX;ly=e.touches[0].clientY;},{passive:true});
+renderer.domElement.addEventListener('touchend',()=>drag=false,{passive:true});
+renderer.domElement.addEventListener('touchmove',e=>{
+  if(!drag)return;
+  theta-=(e.touches[0].clientX-lx)*0.007;
+  phi=Math.max(0.03,Math.min(1.2,phi+(e.touches[0].clientY-ly)*0.005));
+  lx=e.touches[0].clientX;ly=e.touches[0].clientY;
+},{passive:true});
+let paused=false;
+document.addEventListener('keydown',e=>{
+  if(e.code==='Space'){paused=!paused;e.preventDefault();}
+  if(e.code==='KeyR'){theta=0.55;phi=0.20;dist=6.8;}
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+//  ASIMO-STYLE WEIGHT-SHIFT GAIT
+//
+//  Phase convention  (ph = 2π·FREQ·t):
+//    sin(ph) > 0  →  LEFT  SWING  (left foot in air stepping forward)
+//                    RIGHT STANCE (right foot on ground carrying weight)
+//    sin(ph) < 0  →  LEFT  STANCE (left foot on ground carrying weight)
+//                    RIGHT SWING  (right foot in air stepping forward)
+//
+//  ALL 12 leg joints animated + Spinal_X + both arm Chest_arm joints.
+//
+//  IK rule (each frame):
+//    pelvisGrp.position.y = max( requiredPelvisY(lHP,lKN,lAP),
+//                                requiredPelvisY(rHP,rKN,rAP) )
+//    → stance foot bottom stays at world y = 0  ✓
+//    → swing foot lifts clear of floor          ✓
+// ═══════════════════════════════════════════════════════════════════════
+const FREQ      = 0.88;    // Hz — slightly below 1 for visible weight shift
+
+// Hip pitch limits: URDF lower="-0.7854" upper="0.5236" (−45° to +30°)
+const HIP_AMP   = 0.24;    // rad ≈ 13.7°   well within limits
+
+// Knee limits: URDF lower="0.0" upper="2.0944" (0° to 120°)
+const KNEE_BASE = 0.10;    // rad — constant slight bend (avoids lock)
+const KNEE_LIFT = 0.40;    // rad — additional swing lift
+
+// Ankle pitch limits: URDF −30° to +45°
+const ANK_COMP  = 0.52;    // ratio: ankle_pitch = −hp · ANK_COMP + ANK_BIAS
+const ANK_BIAS  = 0.04;    // rad — constant slight dorsiflexion bias
+
+// Ankle roll limits: URDF ±20° (±0.3491 rad)
+// axis "1 0 0" → rotation.z
+// Full sinusoidal so roll is always visibly active on both feet.
+// Left foot rolls inward (positive z) during left STANCE, outward during swing.
+const ANK_ROLL  = 0.09;    // rad ≈ 5° — subtle natural roll
+
+// Hip roll limits: URDF ±25° (±0.4363 rad)
+// axis "1 0 0" → rotation.z
+// During left stance: left hip ABDUCTS slightly (negative rotation.z for left)
+const HIP_ROLL  = 0.06;    // rad
+
+// Hip yaw limits: URDF ±30° (±0.5236 rad)
+// axis "0 0 1" → rotation.y
+// Small toe-out during swing
+const HIP_YAW   = 0.04;    // rad
+
+// Lateral pelvis shift toward stance foot (weight shift)
+const LAT       = 0.028 * S;
+
+// Spine counter-rotation (Spinal_X axis "0 0 1" → rotation.y)
+const SPINE     = 0.055;   // rad
+
+// Arm swing (Chest_arm axis "0 1 0" → rotation.x)
+const ARM       = 0.22;    // rad
+
+const deg = r => (r * 180 / Math.PI).toFixed(1) + '°';
+let clock = 0, lastT = null;
+
+function tick(ts) {
+  requestAnimationFrame(tick);
+  const dt = lastT ? Math.min((ts - lastT) / 1000, 0.05) : 0.016;
+  lastT = ts;
+  if (!paused) clock += dt;
+
+  const ph = 2 * Math.PI * FREQ * clock;
+
+  // ── Hip pitch (rotation.x, axis "0 1 0") ────────────────────────
+  // Left:  forward flex during SWING (sin>0), backward lean during STANCE (sin<0)
+  const lHP =  HIP_AMP * Math.sin(ph);
+  const rHP = -HIP_AMP * Math.sin(ph);    // right leg 180° offset
+
+  // ── Knee (rotation.x, axis "0 1 0") ─────────────────────────────
+  // Bends ONLY during SWING.  Left swings when sin(ph)>0.
+  const lKN = KNEE_BASE + KNEE_LIFT * Math.max(0,  Math.sin(ph));
+  const rKN = KNEE_BASE + KNEE_LIFT * Math.max(0, -Math.sin(ph));
+
+  // ── Ankle pitch (rotation.x, axis "0 1 0") ──────────────────────
+  // Compensates hip lean + subtle push-off during STANCE toe-off.
+  const lAP = -lHP * ANK_COMP + ANK_BIAS;
+  const rAP = -rHP * ANK_COMP + ANK_BIAS;
+
+  // ── Ankle roll (rotation.z, axis "1 0 0") ───────────────────────
+  // Continuous full-sine: left rolls inward (+ z) when in stance (sin<0),
+  // outward (− z) during swing, giving a clear rolling motion every cycle.
+  const lAR = -ANK_ROLL * Math.sin(ph);        // + when sin<0 = left stance  ✓
+  const rAR =  ANK_ROLL * Math.sin(ph);        // − when sin>0 = right stance ✓
+
+  // ── Hip roll (rotation.z, axis "1 0 0") ─────────────────────────
+  // Slight abduction during STANCE (pelvis tilts over stance foot).
+  // Left STANCE: left hip abducts → negative rotation.z for left leg.
+  const lHR = -HIP_ROLL * Math.max(0, -Math.sin(ph));
+  const rHR =  HIP_ROLL * Math.max(0,  Math.sin(ph));
+
+  // ── Hip yaw (rotation.y, axis "0 0 1") ──────────────────────────
+  // Slight toe-out during SWING.
+  const lHY =  HIP_YAW * Math.max(0,  Math.sin(ph));
+  const rHY = -HIP_YAW * Math.max(0, -Math.sin(ph));
+
+  // ── Apply to LEFT leg ────────────────────────────────────────────
+  lLeg.hipYaw.rotation.y      = lHY;
+  lLeg.hipRoll.rotation.z     = lHR;
+  lLeg.hipPitch.rotation.x    = lHP;
+  lLeg.knee.rotation.x        = lKN;
+  lLeg.anklePitch.rotation.x  = lAP;
+  lLeg.ankleRoll.rotation.z   = lAR;
+
+  // ── Apply to RIGHT leg ───────────────────────────────────────────
+  rLeg.hipYaw.rotation.y      = rHY;
+  rLeg.hipRoll.rotation.z     = rHR;
+  rLeg.hipPitch.rotation.x    = rHP;
+  rLeg.knee.rotation.x        = rKN;
+  rLeg.anklePitch.rotation.x  = rAP;
+  rLeg.ankleRoll.rotation.z   = rAR;
+
+  // ── Pelvis height  (IK — no foot ever goes underground) ─────────
+  // Take whichever leg needs the pelvis to be HIGHER.
+  // That leg's foot bottom will be at y = 0 exactly.
+  // The other (swing) foot will be above y = 0.
+  const pyL = requiredPelvisY(lHP, lKN, lAP);
+  const pyR = requiredPelvisY(rHP, rKN, rAP);
+  pelvisGrp.position.y = Math.max(pyL, pyR);
+
+  // ── Lateral weight shift toward stance foot ──────────────────────
+  // Left STANCE (sin<0) → shift pelvis toward LEFT (+x in Three.js).
+  // -LAT·sin(ph) is positive when sin(ph)<0 (left stance) ✓
+  pelvisGrp.position.x = -LAT * Math.sin(ph);
+
+  // ── Spine counter-rotation (rotation.y, axis "0 0 1") ───────────
+  // Nullifies the rotational inertia from swinging legs.
+  // Rotates opposite to the swing direction.
+  spineGrp.rotation.y = SPINE * Math.sin(ph);
+
+  // ── Arm swing  (rotation.x, Chest_arm axis "0 1 0") ─────────────
+  // Counter-swing: left arm swings BACK when left leg swings FORWARD.
+  // Left leg forward: sin(ph)>0 → lArm goes back: chestArm.rotation.x = -ARM·sin(ph) ✓
+  lArm.chestArm.rotation.x = -ARM * Math.sin(ph);
+  rArm.chestArm.rotation.x =  ARM * Math.sin(ph);
+
+  // ── HUD ──────────────────────────────────────────────────────────
+  const leftStance = Math.sin(ph) < 0;
+  document.getElementById('st').textContent   = leftStance ? 'LEFT  foot' : 'RIGHT foot';
+  document.getElementById('jlhp').textContent = deg(lHP);
+  document.getElementById('jlhr').textContent = deg(lHR);
+  document.getElementById('jlkn').textContent = deg(lKN);
+  document.getElementById('jlap').textContent = deg(lAP);
+  document.getElementById('jlar').textContent = deg(lAR);
+  document.getElementById('jrhp').textContent = deg(rHP);
+  document.getElementById('jrkn').textContent = deg(rKN);
+  document.getElementById('jrar').textContent = deg(rAR);
+  document.getElementById('jspn').textContent = deg(spineGrp.rotation.y);
+  document.getElementById('jpy').textContent  = (pelvisGrp.position.y / S * 1000 | 0) + ' mm';
+
+  setCam();
+  renderer.render(scene, camera);
+}
+
+setCam();
+requestAnimationFrame(tick);
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
