@@ -108,7 +108,7 @@ ARCEUS's physical body is fully open-source and 3D printable.
 - **3D Modeling Tool**: Shapr3D
 - **Slicer**: Ultimaker Cura
 - **Printer**: Creality Ender V3 SE
-- **Files provided**: `.stl` source files and ready-to-print `.gcode` files (see `/GCODE`)
+- **Files provided**: ready-to-print `.gcode` files (see `/GCODE`)
 
 ---
 
