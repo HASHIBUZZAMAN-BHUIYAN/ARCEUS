@@ -1,0 +1,18 @@
+#!/bin/bash
+
+ARCEUS_DIR="$(cd "$(dirname "$0")" && pwd)"
+VENV_PYTHON="$ARCEUS_DIR/venv/bin/python"
+SESSION="arceus"
+
+# Kill existing session if any
+tmux kill-session -t $SESSION 2>/dev/null
+
+# Create session and run main.py
+tmux new-session -d -s $SESSION -n main
+tmux send-keys -t $SESSION:main "$VENV_PYTHON $ARCEUS_DIR/main.py" Enter
+
+echo "[INFO] main.py is running in background."
+echo ""
+echo "  Ctrl+B then Z/z  →  back to control terminal"
+echo ""
+echo "[INFO] Type 'arceus_main' to reattach."

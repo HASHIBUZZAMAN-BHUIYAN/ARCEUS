@@ -1,0 +1,12 @@
+#!/bin/bash
+
+ARCEUS_DIR="$(cd "$(dirname "$0")" && pwd)"
+SESSION="arceus"
+
+echo "[INFO] Stopping cv.py and nlp.py..."
+pkill -f "$ARCEUS_DIR/cv.py"
+pkill -f "$ARCEUS_DIR/nlp.py"
+
+tmux kill-session -t $SESSION 2>/dev/null
+
+echo "[INFO] Done."

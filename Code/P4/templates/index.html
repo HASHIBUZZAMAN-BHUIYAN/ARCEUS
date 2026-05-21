@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>ARCEUS Controller</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/particles.js/2.0.0/particles.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.6.1/socket.io.min.js"></script>
+<style>
+
+/* ── PI ADDRESSES — edit these two lines only ──────────────────────────────
+   PI1 = Servo / OLED Pi   (main.py  → port 5000)
+   PI2 = Camera / NLP Pi   (cv.py    → port 5001)
+   Set them in the <script> block at the bottom of this file.
+────────────────────────────────────────────────────────────────────────── */
+
+/* ── DESIGN  (light theme) ─────────────────────────────────────── */
+:root {
+  --bg:         #f0f4f8;
+  --surface:    #ffffff;
+  --surface2:   #f7fafc;
+  --border:     #dde5ee;
+  --border2:    #c8d5e2;
+  --accent:     #1a7ab0;
+  --accent-bg:  #e8f4fc;
+  --green:      #16963c;
+  --green-bg:   #eaf7ef;
+  --red:        #c02828;
+  --red-bg:     #fdeaea;
+  --amber:      #b07010;
+  --amber-bg:   #fdf5e0;
+  --text:       #1a2a3a;
+  --text-mid:   #4a6070;
+  --dim:        #90a8b8;
+  --happy:      #12903a;
+  --sad:        #8020a0;
+  --angry:      #c02020;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  min-height: 100vh;
+}
+
+/* ── PARTICLES ────────────────────────────────────────────────────────── */
+#particles-js {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* ── WRAPPER ──────────────────────────────────────────────────────────── */
+#app {
+  position: relative;
+  z-index: 1;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 0 12px 48px;
+}
+
+/* ── TOP BAR ──────────────────────────────────────────────────────────── */
+#topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 6px rgba(0,0,0,.06);
+  margin-bottom: 16px;
+}
+.logo     { font-size: 22px; font-weight: 800; letter-spacing: .2em; color: var(--accent); }
+.logo-sub { font-size: 9px; letter-spacing: .18em; color: var(--dim); margin-top: 2px; text-transform: uppercase; }
+
+/* Status pill row */
+.pill-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 12px; border-radius: 20px; font-size: 10px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase;
+  border: 1px solid var(--border2);
+  background: var(--surface2); color: var(--text-mid);
+  transition: all .3s;
+}
+.pill.active { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+.pill.busy   { background: var(--amber-bg);  color: var(--amber);  border-color: var(--amber);  }
+.pill-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--dim); transition: background .3s;
+}
+.pill.active .pill-dot { background: var(--accent); box-shadow: 0 0 5px var(--accent); }
+.pill.busy   .pill-dot { background: var(--amber);  box-shadow: 0 0 5px var(--amber);  }
+
+/* ── SECTION CARD ─────────────────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0,0,0,.05);
+}
+.card-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 10px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase;
+}
+.card-head.blue   { color: var(--accent); }
+.card-head.green  { color: var(--green);  }
+.card-head.amber  { color: var(--amber);  }
+.h-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.h-tag { margin-left: auto; font-size: 9px; font-weight: 400; color: var(--dim); letter-spacing: .08em; }
+.card-body { padding: 16px; }
+
+/* ── MAIN GRID: Walk left | Camera right ──────────────────────────────── */
+#main-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+/* ── WALKING D-PAD ────────────────────────────────────────────────────── */
+.dpad-wrap { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 52px);
+  grid-template-rows:    repeat(3, 52px);
+  gap: 6px;
+}
+.dp {
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-radius: 10px; color: var(--text-mid);
+  font-size: 18px; cursor: pointer;
+  position: relative; user-select: none;
+  transition: all .15s;
+}
+.dp:hover  { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.dp:active { transform: scale(.92); background: var(--accent-bg); border-color: var(--accent); }
+.dp.active { border-color: var(--accent); background: var(--accent-bg); color: var(--accent);
+             box-shadow: 0 0 0 3px rgba(26,122,176,.15); }
+.dp.center-dp { font-size: 10px; letter-spacing: .06em; font-weight: 600; }
+.dp.center-dp:hover { border-color: var(--red); color: var(--red); background: var(--red-bg); }
+.dp-empty { background: transparent; border: none; }
+.speed-row { width: 100%; }
+.speed-lbl { font-size: 10px; font-weight: 600; letter-spacing: .1em; color: var(--text-mid); text-transform: uppercase; margin-bottom: 6px; }
+.speed-sl  { width: 100%; accent-color: var(--accent); cursor: pointer; }
+.walk-note { margin-top: 10px; font-size: 10px; color: var(--text-mid); line-height: 1.5; }
+
+/* ── CAMERA SECTION ───────────────────────────────────────────────────── */
+.cam-inner { display: flex; flex-direction: column; gap: 10px; }
+
+/* Emotion terminal block — light theme */
+#emo-terminal {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface2);
+  border: 2px solid var(--border2);
+  transition: background .3s, border-color .3s;
+}
+#emo-bar-top,
+#emo-bar-bot {
+  padding: 3px 14px;
+  font-size: 11px;
+  letter-spacing: .04em;
+  color: var(--border2);
+  transition: color .3s;
+  white-space: pre;
+  overflow: hidden;
+}
+#emo-line {
+  padding: 10px 14px;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: .14em;
+  color: var(--text-mid);
+  transition: color .3s;
+}
+#emo-label { font-weight: 800; }
+
+/* Top-bar pill emo */
+#videoStream {
+  width: 100%; border-radius: 10px;
+  border: 1px solid var(--border);
+  display: none;
+  background: #e0e8f0;
+}
+.stream-placeholder {
+  width: 100%; aspect-ratio: 4/3;
+  border-radius: 10px; border: 1px dashed var(--border2);
+  background: var(--surface2);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; color: var(--dim); font-size: 11px; letter-spacing: .08em;
+}
+.stream-placeholder svg { width: 36px; height: 36px; stroke: var(--dim); fill: none; stroke-width: 1.5; }
+
+/* Cam buttons */
+.cam-btns { display: flex; gap: 8px; }
+.cam-btn {
+  flex: 1; padding: 9px;
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-radius: 9px; color: var(--text-mid);
+  font-family: inherit; font-size: 11px; font-weight: 600;
+  letter-spacing: .09em; cursor: pointer; text-transform: uppercase;
+  transition: all .15s;
+}
+.cam-btn:hover  { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.cam-btn.on     { border-color: var(--green);  color: var(--green);  background: var(--green-bg);  }
+.cam-btn.off    { border-color: var(--red);    color: var(--red);    background: var(--red-bg);    }
+
+/* Key hints */
+.key-hint { font-size: 10px; color: var(--dim); }
+.key-hint kbd {
+  display: inline-block; padding: 2px 7px;
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-radius: 4px; font-family: inherit; font-size: 10px; color: var(--text-mid);
+}
+
+/* ── EXPRESSION GRID ──────────────────────────────────────────────────── */
+#expr-section { margin-bottom: 14px; }
+.expr-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.expr-btn {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 8px; padding: 16px 8px;
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-radius: 12px; color: var(--text-mid);
+  cursor: pointer; font-family: inherit;
+  font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  transition: all .15s; user-select: none;
+}
+.expr-btn:hover  { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.expr-btn:active { transform: scale(.95); }
+.expr-btn.running {
+  border-color: var(--accent); color: var(--accent); background: var(--accent-bg);
+  box-shadow: 0 0 0 3px rgba(26,122,176,.15);
+}
+.expr-btn.locked { opacity: .4; cursor: not-allowed; pointer-events: none; }
+
+.btn-icon {
+  width: 24px; height: 24px;
+  stroke: currentColor; fill: none;
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* ── RESPONSIVE ───────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  #main-grid { grid-template-columns: 1fr; }
+  .expr-grid { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<div id="particles-js"></div>
+
+<div id="app">
+
+  <!-- PI2 CONFIG BAR -->
+  <div id="pi2-config-bar" style="
+    background:#fff8e8; border-bottom:1px solid #e8d8a0;
+    padding:8px 20px; display:flex; align-items:center; gap:10px;
+    font-size:11px; font-family:inherit; flex-wrap:wrap;">
+    <span style="font-weight:700; color:#b07010;">IQ PORT</span>
+    <input id="pi2-input" type="text" placeholder="https://192.168.137.65:5001"
+      style="flex:1; min-width:160px; max-width:260px;
+             padding:5px 10px; border:1px solid #d0c080; border-radius:6px;
+             font-family:monospace; font-size:11px; color:#3a2a00; background:#fffdf0;">
+    <button id="pi2-save"
+      style="padding:5px 14px; background:#d0a020; color:#fff; border:none;
+             border-radius:6px; font-family:inherit; font-weight:700; cursor:pointer; font-size:11px;">
+      ATTACH
+    </button>
+    <span id="pi2-saved" style="color:#16963c; font-weight:700;"></span>
+    <span style="color:#a09050; margin-left:auto;">
+      ACTUATORS ARE AUTO DETECTED
+    </span>
+  </div>
+
+  <!-- TOP BAR -->
+  <div id="topbar">
+    <div>
+      <div class="logo">ARCEUS</div>
+      <div class="logo-sub">Unified Controller</div>
+    </div>
+    <div class="pill-row">
+      <div class="pill" id="pill-expr">
+        <div class="pill-dot"></div>
+        <span id="pill-expr-text">Ready</span>
+      </div>
+      <div class="pill active" id="pill-cv">
+        <div class="pill-dot"></div>
+        <span id="pill-emo-text">No Feed</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN GRID: Walk (left) | Camera (right) -->
+  <div id="main-grid">
+
+    <!-- WALKING CARD -->
+    <div class="card">
+      <div class="card-head amber">
+        <div class="h-dot"></div>
+        MOVEMENT
+        <span class="h-tag"> PORT 5000</span>
+      </div>
+      <div class="card-body">
+        <div class="dpad-wrap">
+          <div class="dpad">
+            <div class="dp-empty"></div>
+            <div class="dp" id="dp-fwd" onclick="walk('front')">
+              &#9650;
+            </div>
+            <div class="dp-empty"></div>
+
+            <div class="dp" id="dp-lft" onclick="walk('left')">
+              &#9664;
+            </div>
+            <div class="dp center-dp" id="dp-stop" onclick="walkStop()">
+              STOP
+            </div>
+            <div class="dp" id="dp-rgt" onclick="walk('right')">
+              &#9654;
+            </div>
+
+            <div class="dp-empty"></div>
+            <div class="dp" id="dp-bck" onclick="walk('back')">
+              &#9660;
+            </div>
+            <div class="dp-empty"></div>
+          </div>
+
+          <div class="speed-row">
+            <div class="speed-lbl">SPEED</div>
+            <input type="range" class="speed-sl" id="speed-sl"
+                   min="1" max="10" value="5"
+                   oninput="setSpeed(this.value)">
+          </div>
+          <div id="gait-status" style="
+            margin-top:10px; font-family:'Courier New',monospace;
+            font-size:11px; color:var(--text-mid);
+            background:var(--surface2); border:1px solid var(--border);
+            border-radius:8px; padding:8px 12px; line-height:1.8;">
+            <span id="gs-state" style="font-weight:700;">STOPPED</span>
+            &nbsp;&nbsp;|&nbsp;&nbsp;
+            Stance: <span id="gs-stance">—</span>
+            &nbsp;&nbsp;|&nbsp;&nbsp;
+            Speed: <span id="gs-speed">1.0</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CAMERA CARD -->
+    <div class="card">
+      <div class="card-head green">
+        <div class="h-dot"></div>
+        EMOTION DETECTION
+        <span class="h-tag">PORT 5001</span>
+      </div>
+      <div class="card-body">
+        <div class="cam-inner">
+
+          <!-- Terminal-style emotion display -->
+          <div id="emo-terminal">
+            <div id="emo-bar-top" style="color:#b0c0cc">&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;</div>
+            <div id="emo-line" style="color:#6080a0">&nbsp;&nbsp;&nbsp;[ARCEUS]&nbsp;&nbsp;&#9658;&nbsp;&nbsp;<span id="emo-label">In Search of Human Face</span></div>
+            <div id="emo-bar-bot" style="color:#b0c0cc">&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;</div>
+          </div>
+
+          <!-- Stream -->
+          <div class="stream-placeholder" id="stream-placeholder">
+            <svg viewBox="0 0 24 24">
+              <path d="M23 7l-7 5 7 5V7z"/>
+              <rect x="1" y="5" width="15" height="14" rx="2"/>
+            </svg>
+          </div>
+          <img id="videoStream" src="" alt="Arceus Camera Stream">
+
+          <!-- Controls -->
+          <div class="cam-btns">
+            <button class="cam-btn" id="btn-show" onclick="ctrlStream('start')">
+              VISUALIZE
+            </button>
+            <button class="cam-btn" id="btn-hide" onclick="ctrlStream('stop')">
+              HIDE
+            </button>
+          </div>
+
+          <div class="key-hint">
+            Keyboard: <kbd>Z</kbd> VISUALIZE &nbsp;&nbsp; <kbd>C</kbd> HIDE
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div><!-- #main-grid -->
+
+  <!-- EXPRESSION SECTION -->
+  <div class="card" id="expr-section">
+    <div class="card-head blue">
+      <div class="h-dot"></div>
+      Expressions
+      <span class="h-tag">PORT 5000</span>
+    </div>
+    <div class="card-body">
+      <div class="expr-grid">
+
+        <!-- Hi Left -->
+        <button class="expr-btn" data-expr="hi_left" onclick="runExpr('hi_left')">
+          <svg class="btn-icon" viewBox="0 0 24 24">
+            <path d="M19 12H5M5 12l6-6M5 12l6 6"/>
+          </svg>
+          Hi Left
+        </button>
+
+        <!-- Hi Right -->
+        <button class="expr-btn" data-expr="hi_right" onclick="runExpr('hi_right')">
+          <svg class="btn-icon" viewBox="0 0 24 24">
+            <path d="M5 12h14M19 12l-6-6M19 12l-6 6"/>
+          </svg>
+          Hi Right
+        </button>
+
+        <!-- Welcome -->
+        <button class="expr-btn" data-expr="welcome" onclick="runExpr('welcome')">
+          <svg class="btn-icon" viewBox="0 0 24 24">
+            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83
+                     M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+          </svg>
+          Welcome
+        </button>
+
+        <!-- Yes -->
+        <button class="expr-btn" data-expr="yes" onclick="runExpr('yes')">
+          <svg class="btn-icon" viewBox="0 0 24 24">
+            <path d="M20 6L9 17l-5-5"/>
+          </svg>
+          Yes
+        </button>
+
+        <!-- No -->
+        <button class="expr-btn" data-expr="no" onclick="runExpr('no')">
+          <svg class="btn-icon" viewBox="0 0 24 24">
+            <path d="M18 6L6 18M6 6l12 12"/>
+          </svg>
+          No
+        </button>
+
+        <!-- Explain -->
+        <button class="expr-btn" data-expr="explain" onclick="runExpr('explain')">
+          <svg class="btn-icon" viewBox="0 0 24 24">
+            <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+          </svg>
+          Explain
+        </button>
+
+        <!-- Audience -->
+        <button class="expr-btn" data-expr="audience" onclick="runExpr('audience')">
+          <svg class="btn-icon" viewBox="0 0 24 24">
+            <circle cx="9" cy="7" r="2"/>
+            <circle cx="15" cy="7" r="2"/>
+            <path d="M5 20v-1a4 4 0 014-4h6a4 4 0 014 4v1"/>
+          </svg>
+          Audience
+        </button>
+
+        <!-- Bow -->
+        <button class="expr-btn" data-expr="bow" onclick="runExpr('bow')">
+          <svg class="btn-icon" viewBox="0 0 24 24">
+            <path d="M12 3a2 2 0 100 4 2 2 0 000-4z" fill="currentColor" stroke="none"/>
+            <path d="M12 7v5M8 17h8M10 12l-2 5M14 12l2 5"/>
+          </svg>
+          Bow
+        </button>
+
+      </div>
+    </div>
+  </div>
+
+
+  <!-- NLP CONVERSATION FEED -->
+  <div class="card" style="margin-top:14px;" id="nlp-card">
+    <div class="card-head" style="color:var(--purple,#7040b0);">
+      <div class="h-dot" style="background:var(--purple,#7040b0);"></div>
+      VOICE TRACK
+      <span class="h-tag">PORT 5001</span>
+      <button onclick="clearNlpDisplay()" style="
+        margin-left:8px; padding:2px 8px; font-size:9px; font-family:inherit;
+        background:transparent; border:1px solid var(--border2); border-radius:4px;
+        color:var(--dim); cursor:pointer;">Clear view</button>
+    </div>
+    <div class="card-body" style="padding:10px 14px;">
+      <div id="nlp-feed" style="
+        font-family:'Courier New',monospace; font-size:12px;
+        background:var(--surface2); border:1px solid var(--border);
+        border-radius:8px; padding:10px 14px;
+        max-height:200px; overflow-y:auto; line-height:1.8;">
+        <span style="color:var(--dim);"> ARCEUS IS WAITING TO TALK...</span>
+      </div>
+    </div>
+  </div>
+
+</div><!-- #app -->
+
+<!-- ── JAVASCRIPT ───────────────────────────────────────────────────────── -->
+<script>
+// ============================================================
+//  PI ADDRESSES
+//  PI1 is auto-detected from the URL of this page (always correct).
+//  PI2 is the Pi 5 IP — set it once using the box below and it
+//  is saved in your browser so you never need to change it again.
+// ============================================================
+const PI1 = window.location.protocol + "//" + window.location.hostname + ":5000";
+let   PI2 = localStorage.getItem("pi2_url") || "";
+
+// ── PI2 CONFIG UI ────────────────────────────────────────────
+(function buildConfigUI() {
+  const bar = document.getElementById("pi2-config-bar");
+  if (!bar) return;
+  const inp = document.getElementById("pi2-input");
+  inp.value = PI2;
+  document.getElementById("pi2-save").addEventListener("click", () => {
+    const raw = inp.value.trim().replace(/\/$/, "");
+    PI2 = raw.startsWith("http") ? raw : "http://" + raw;
+    localStorage.setItem("pi2_url", PI2);
+    inp.value = PI2;
+    document.getElementById("pi2-saved").textContent = "Saved!";
+    setTimeout(() => document.getElementById("pi2-saved").textContent = "", 2000);
+    // restart emotion polling with new IP
+  });
+})();
+
+// ── SOCKET.IO to Pi 1 ───────────────────────────────────────
+const socket = io(PI1);
+socket.on("connect",  () => console.log("Pi 1 connected"));
+socket.on("status",   updateExprStatus);
+
+// ── EXPRESSION STATUS ────────────────────────────────────────
+function updateExprStatus(s) {
+  const pill     = document.getElementById("pill-expr");
+  const pillText = document.getElementById("pill-expr-text");
+
+  if (s.busy) {
+    pill.className = "pill busy";
+    pillText.textContent = s.expression.replace("_", " ").toUpperCase();
+  } else {
+    pill.className = "pill";
+    pillText.textContent = "Ready";
+  }
+
+  document.querySelectorAll(".expr-btn").forEach(b => {
+    const mine = b.dataset.expr === s.expression && s.busy;
+    b.classList.toggle("running", mine);
+    b.classList.toggle("locked",  s.busy && !mine);
+  });
+}
+
+// Fallback poll
+setInterval(() => {
+  fetch(`${PI1}/status`, { cache: "no-store" })
+    .then(r => r.json()).then(updateExprStatus).catch(() => {});
+}, 2500);
+
+// ── RUN EXPRESSION ───────────────────────────────────────────
+function runExpr(name) {
+  const pill = document.getElementById("pill-expr");
+  if (pill.classList.contains("busy")) return;
+  fetch(`${PI1}/expression/${name}`, { method: "POST" }).catch(console.error);
+}
+
+// ── GAIT TELEMETRY ───────────────────────────────────────────
+socket.on("telemetry", function(d) {
+  document.getElementById("gs-stance").textContent = d.stance || "—";
+});
+
+function updateGaitStatus(walking, dir, speed) {
+  const el = document.getElementById("gs-state");
+  if (!el) return;
+  if (walking) {
+    el.textContent = dir.toUpperCase();
+    el.style.color = "var(--accent)";
+  } else {
+    el.textContent = "STOPPED";
+    el.style.color = "var(--text-mid)";
+    document.getElementById("gs-stance").textContent = "—";
+  }
+  document.getElementById("gs-speed").textContent = speed;
+}
+
+// ── WALK ─────────────────────────────────────────────────────
+const dpMap = { front: "dp-fwd", back: "dp-bck", left: "dp-lft", right: "dp-rgt" };
+let activeDir = null;
+
+function setActiveDp(dir) {
+  document.querySelectorAll(".dp").forEach(b => b.classList.remove("active"));
+  if (dir && dpMap[dir]) {
+    document.getElementById(dpMap[dir]).classList.add("active");
+  }
+  activeDir = dir;
+}
+
+function walk(dir) {
+  setActiveDp(dir);
+  updateGaitStatus(true, dir, document.getElementById("speed-sl").value);
+  fetch(`${PI1}/walk/${dir}`, { method: "POST" }).catch(console.error);
+}
+
+function walkStop() {
+  setActiveDp(null);
+  updateGaitStatus(false, "", document.getElementById("speed-sl").value);
+  fetch(`${PI1}/walk/stop`, { method: "POST" }).catch(console.error);
+}
+
+function setSpeed(v) {
+  document.getElementById("gs-speed").textContent = v;
+  fetch(`${PI1}/walk/speed`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ speed: parseFloat(v) / 10 }),
+  }).catch(console.error);
+}
+
+// ── CAMERA STREAM ─────────────────────────────────────────────
+let streaming = false;
+
+function ctrlStream(cmd) {
+  fetch(`${PI2}/control_stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ command: cmd }),
+  })
+  .then(r => r.json())
+  .then(d => applyStreamState(d.streaming))
+  .catch(() => applyStreamState(false));
+}
+
+function applyStreamState(on) {
+  streaming = on;
+  const vid  = document.getElementById("videoStream");
+  const ph   = document.getElementById("stream-placeholder");
+  const bOn  = document.getElementById("btn-show");
+  const bOff = document.getElementById("btn-hide");
+
+  if (on) {
+    vid.src = `${PI2}/video_feed`;
+    vid.style.display = "block";
+    ph.style.display  = "none";
+    bOn.className  = "cam-btn on";
+    bOff.className = "cam-btn";
+  } else {
+    vid.src = "";
+    vid.style.display = "none";
+    ph.style.display  = "flex";
+    bOn.className  = "cam-btn";
+    bOff.className = "cam-btn off";
+  }
+}
+
+// Keyboard: Z = show, C = hide
+document.addEventListener("keydown", e => {
+  if (e.key.toLowerCase() === "z") ctrlStream("start");
+  if (e.key.toLowerCase() === "c") ctrlStream("stop");
+});
+
+// ── EMOTION POLLING (Pi 2 direct) ────────────────────────────
+const EMO = {
+  HAPPY:     { bg: "#edfbf1", bc: "#28a040", bar: "#28a040", text: "#12803a", label: "HAPPY"                   },
+  SAD:       { bg: "#f7eefb", bc: "#9030c0", bar: "#9030c0", text: "#7020a0", label: "SAD"                     },
+  ANGRY:     { bg: "#fdeaea", bc: "#c82020", bar: "#c82020", text: "#a01818", label: "ANGRY"                   },
+  "NO FACE": { bg: "#f0f4f8", bc: "#b0c0cc", bar: "#b0c0cc", text: "#6080a0", label: "In Search of Human Face" },
+  "NO FEED": { bg: "#fdf8ec", bc: "#c09030", bar: "#c09030", text: "#a07020", label: "NO FEED"                 },
+};
+const EMO_DEF = { bg: "#f0f4f8", bc: "#b0c0cc", bar: "#b0c0cc", text: "#6080a0", label: "—" };
+
+const BAR_CHAR = "\u2550";
+const BAR_LEN  = 46;
+const BAR_STR  = BAR_CHAR.repeat(BAR_LEN);
+
+function setEmotion(emo) {
+  const c      = EMO[emo] || EMO_DEF;
+  const term   = document.getElementById("emo-terminal");
+  const top    = document.getElementById("emo-bar-top");
+  const bot    = document.getElementById("emo-bar-bot");
+  const line   = document.getElementById("emo-line");
+  const label  = document.getElementById("emo-label");
+  const pText  = document.getElementById("pill-emo-text");
+
+  term.style.background  = c.bg;
+  term.style.borderColor = c.bc;
+  top.style.color        = c.bar;
+  bot.style.color        = c.bar;
+  top.textContent        = BAR_STR;
+  bot.textContent        = BAR_STR;
+  line.style.color       = c.text;
+  label.textContent      = c.label;
+  pText.textContent      = emo || "No Feed";
+}
+
+setInterval(() => {
+  fetch(`${PI2}/emotion_status`, { cache: "no-store" })
+    .then(r => r.json())
+    .then(d => setEmotion(d.emotion))
+    .catch(() => setEmotion("NO FEED"));
+}, 400);
+
+// ── NLP CONVERSATION FEED ────────────────────────────────────
+let _nlpLast = "";
+let _nlpDisplayed = [];
+
+function renderNlp(entries) {
+  if (!entries || entries.length === 0) return;
+  const key = entries.join("|");
+  if (key === _nlpLast) return;
+  _nlpLast = key;
+  _nlpDisplayed = entries;
+
+  const box = document.getElementById("nlp-feed");
+  box.innerHTML = entries.map(line => {
+    if (line.startsWith("[User Input]")) {
+      const txt = line.replace("[User Input]", "").trim();
+      return `<div><span style="color:var(--dim);font-size:10px;">You</span><br>
+              <span style="color:var(--text);">${txt}</span></div>`;
+    } else if (line.startsWith("[Arceus]")) {
+      const txt = line.replace("[Arceus]", "").trim();
+      return `<div style="margin-top:4px;"><span style="color:var(--accent);font-size:10px;font-weight:700;">Arceus</span><br>
+              <span style="color:var(--accent);">${txt}</span></div>`;
+    }
+    return `<div style="color:var(--dim);font-size:10px;">${line}</div>`;
+  }).join("<hr style='border:none;border-top:1px solid var(--border);margin:6px 0;'>");
+  box.scrollTop = box.scrollHeight;
+}
+
+function clearNlpDisplay() {
+  document.getElementById("nlp-feed").innerHTML =
+    "<span style='color:var(--dim);'>Cleared. New messages will appear here.</span>";
+  _nlpLast = "";
+}
+
+setInterval(() => {
+  if (!PI2) return;
+  fetch(`${PI2}/nlp_feed`, { cache: "no-store" })
+    .then(r => r.json())
+    .then(d => renderNlp(d.entries))
+    .catch(() => {});
+}, 1500);
+
+// ── AUTO-START STREAM ON LOAD ─────────────────────────────────
+window.addEventListener("load", () => {
+  setTimeout(() => {
+    if (PI2) ctrlStream("start");
+  }, 1000);
+});
+
+// ── PARTICLES (light theme) ───────────────────────────────────
+particlesJS("particles-js", {
+  particles: {
+    number:  { value: 80 },
+    size:    { value: 3 },
+    color:   { value: "#888888" },
+    opacity: { value: 0.5 },
+    move:    { speed: 1, enable: true },
+    line_linked: {
+      enable: true, distance: 150,
+      color: "#888888", opacity: 0.4,
+    },
+  },
+  interactivity: {
+    events: {
+      onhover: { enable: true, mode: "repulse" },
+      onclick: { enable: true, mode: "push" },
+    },
+  },
+});
+</script>
+</body>
+</html>

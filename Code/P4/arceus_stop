@@ -1,0 +1,11 @@
+#!/bin/bash
+
+ARCEUS_DIR="$(cd "$(dirname "$0")" && pwd)"
+SESSION="arceus"
+
+echo "[INFO] Stopping main.py..."
+pkill -f "$ARCEUS_DIR/main.py"
+
+tmux kill-session -t $SESSION 2>/dev/null
+
+echo "[INFO] Done."
