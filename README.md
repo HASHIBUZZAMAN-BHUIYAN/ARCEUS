@@ -2,7 +2,7 @@
 
 > *"We cannot solve loneliness with technology alone. But we can make sure that on the hardest days, no one faces it without a voice beside them."*
 
-**ARCEUS** is an open-source emotional support robot designed to detect and respond to human sadness, loneliness, and emotional distress. Developed by **Team HYDROXYCITRONELLAL** for the **2026 상반기 SW중심대학 오픈소스 AI·SW활용 경진대회** (2026 SW-Centric University Open Source AI·SW Utilization Competition).
+**ARCEUS** is an emotional support robot designed to detect and respond to human sadness, loneliness, and emotional distress. Developed by **Team HYDROXYCITRONELLAL** for the **2026 상반기 SW중심대학 오픈소스 AI·SW활용 경진대회** (2026 SW-Centric University Open Source AI·SW Utilization Competition).
 
 ---
 
