@@ -73,7 +73,7 @@ DETECTION → TALKING → EMPATHY → DOPAMINE RELEASE → MOOD MAKING → LEAVI
 | NLP Classification | Speech emotion keyword classifier (88% accuracy) |
 | 3D Modeling | Shapr3D |
 | 3D Slicing | Ultimaker Cura |
-| Remote Access | PuTTY (SSH), RealVNC |
+| Remote Access | PuTTY (SSH), RealVNC, Local Server |
 | IDE | Thonny |
 | OS | Raspberry Pi OS |
 
