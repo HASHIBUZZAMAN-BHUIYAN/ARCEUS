@@ -183,7 +183,7 @@ ARCEUS is built entirely on open-source hardware and software:
 |------|------|
 | Creator | Bhuiyan Hashibuzzaman |
 | Co-Creator | Abdyllaeva Bermet |
-| Contributor | Kim Kwang Kyun |
+| Contributor | Shin Dong-Hyun |
 | Supervisor | Prof. Hwang Dong-ha |
 | Team | HYDROXYCITRONELLAL |
 
