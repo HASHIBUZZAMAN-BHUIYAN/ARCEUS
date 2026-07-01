@@ -181,7 +181,7 @@ ARCEUS is built entirely on open-source hardware and software:
 
 | Role | Name |
 |------|------|
-| Creator | Bhuiyan Hashibuzzaman |
+| Creator | Hashibuzzaman Bhuiyan |
 | Co-Creator | Abdyllaeva Bermet |
 | Team | HYDROXYCITRONELLAL |
 
