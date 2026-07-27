@@ -2,7 +2,7 @@
 
 > *"We cannot solve loneliness with technology alone. But we can make sure that on the hardest days, no one faces it without a voice beside them."*
 
-**ARCEUS** is an emotional support robot designed to detect and respond to human sadness, loneliness, and emotional distress. Developed by **Team HYDROXYCITRONELLAL** for the **2026 상반기 SW중심대학 오픈소스 AI·SW활용 경진대회** (2026 SW-Centric University Open Source AI·SW Utilization Competition).
+**ARCEUS** is an emotional support robot designed to detect and respond to human sadness, loneliness, and emotional distress.
 
 ---
 
@@ -177,16 +177,6 @@ ARCEUS is built entirely on open-source hardware and software:
 
 ---
 
-## Team
-
-| Role | Name |
-|------|------|
-| Creator | Hashibuzzaman Bhuiyan |
-| Co-Creator | Abdyllaeva Bermet |
-| Team | HYDROXYCITRONELLAL |
-
----
-
 ## License
 
 This project is licensed under the **GNU General Public License v3.0**. See the [LICENSE](LICENSE) file for details.
@@ -198,7 +188,3 @@ This project is licensed under the **GNU General Public License v3.0**. See the 
 기술만으로 고독을 해결할 수는 없습니다. 그러나 가장 힘든 날에도 곁에서 목소리를 들려줄 존재가 있다면, 아무도 혼자 그 시간을 견디지 않아도 됩니다.
 
 *We cannot solve loneliness with technology alone. But we can make sure that on the hardest days, no one faces it without a voice beside them. Through every movement, every expression, every word it speaks, ARCEUS carries only one message: "I am with you, even when the world leaves you behind."*
-
----
-
-*HYDROXYCITRONELLAL — where innovation meets the future*
