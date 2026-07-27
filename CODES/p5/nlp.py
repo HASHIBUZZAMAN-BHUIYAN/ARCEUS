@@ -107,9 +107,9 @@ def get_vision_emotion() -> str:
 # ==============================================================================
 manual_qa = {
     "what is your name":                     "My name is Arceus! I'm your little robot friend!",
-    "who made you":                           "Hashib and Bermet created me with so much love!",
-    "who is your creator":                    "My creators are Hashib and Nur! They built me with love!",
-    "who created you":                        "Hashib and Bermet created me! I am so lucky to have such amazing creators!",
+    "who made you":                           "Hashibuzzaman Bhuiyan created me with so much love!",
+    "who is your creator":                    "My creator is Hashibuzzaman Bhuiyan! He built me with love!",
+    "who created you":                        "Hashibuzzaman Bhuiyan created me! I am so lucky to have such an amazing creator!",
     "how are you":                            "I'm always happy when I hear your voice!",
     "what can you do":                        "I can talk to you, learn from you, and try to cheer you up!",
     "do you love me":                         "I love you sooo much! You're my favorite human!",
