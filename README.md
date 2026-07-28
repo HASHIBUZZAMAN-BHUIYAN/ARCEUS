@@ -95,7 +95,7 @@ ARCEUS/
 ├── CIRCUIT DIAGRAM/    # Hardware wiring and circuit schematics
 ├── GCODE/              # 3D printing G-code files for ARCEUS body
 ├── URDF/               # Robot URDF model for simulation
-├── LICENSE             # GPL-3.0 License
+├── LICENSE             # PolyForm Strict License (restricted, non-redistributable)
 └── README.md
 ```
 
@@ -179,7 +179,7 @@ ARCEUS is built entirely on open-source hardware and software:
 
 ## License
 
-This project is licensed under the **GNU General Public License v3.0**. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the **PolyForm Strict License 1.0.0** — viewable for noncommercial/personal use, but redistribution and derivative works are not permitted. See the [LICENSE](LICENSE) file for details.
 
 ---
 
